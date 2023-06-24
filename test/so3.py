@@ -89,12 +89,12 @@ def log_map(R):
 
 # R = rand()
 # print(R)
-exp = exp_map(torch.tensor([[0., 1., 0.],
-                            [1., 0., 0.],
-                            [0., 0., 0.]]))
-log = log_map(exp)
-print(exp)
-print(log)
+# exp = exp_map(torch.tensor([[0., 1., 0.],
+#                             [1., 0., 0.],
+#                             [0., 0., 0.]]))
+# log = log_map(exp)
+# print(exp)
+# print(log)
 
 import numpy as np
 

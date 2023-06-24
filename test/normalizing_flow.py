@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import math
+import so3
 
 
 class EuclideanFlow(nn.Module):
@@ -38,15 +39,16 @@ class MobiusFlow(nn.Module):
             nn.ReLU(),
             nn.Linear(128, 128),
             nn.ReLU(),
-            nn.Linear(128, 3)
+            nn.Linear(128, 3),
+            nn.Tanh()
         )
 
     def forward(self, R, t, C):
         input = torch.concatenate([C, t], dim=1)
-        w_ = self.net(input)
+        w_ = self.net(input) / math.sqrt(2)
         c1 = R[:, :, 2]
         c2 = R[:, :, 0]
-        w = w_ - c1 * (torch.inner(c1, w_))
+        w = w_ - c1 * (c1 * w_).sum(1, keepdim=True)
 
         c2_w = c2 - w
         c2_w_l = torch.norm(c2_w, dim=1, keepdim=True)
@@ -57,15 +59,15 @@ class MobiusFlow(nn.Module):
         R_new = torch.stack([c2_new, c3_new, c1], dim=2)
 
         B = R.shape[0]
-        J = constant * (torch.eye(3).reshape((1, 3, 3)).repeat(B, 1, 1)
-                        - 2 * c2_w[:, :, None] @ c2_w[:, None, :]) / c2_w_l ** 2
+        J = constant[:, :, None] * (torch.eye(3).reshape((1, 3, 3)).repeat(B, 1, 1) - 2 * c2_w[:, :, None] @ c2_w[:, None, :]) / c2_w_l[:, :, None] ** 2
         dc_dtheta = R[:, :, 1:2]
-        log_det = torch.norm(J @ dc_dtheta, dim=1)
+        log_det = torch.norm(J @ dc_dtheta, dim=1)[:, 0]
         return R_new, t, log_det
 
     def inverse(self, R, t, C):
         input = torch.concatenate([C, t], dim=1)
-        w_ = self.net(input)
+        w_ = self.net(input) / math.sqrt(2)
+        w_ = w_ / torch.norm(w_, dim=1, keepdim=True)
         c1 = R[:, :, 2]
         c2 = R[:, :, 0]
         w = w_ - c1 * (torch.inner(c1, w_))
@@ -78,6 +80,51 @@ class MobiusFlow(nn.Module):
         c3_new = torch.cross(c1, c2_new)
         R_new = torch.stack([c2_new, c3_new, c1], dim=2)
         return R_new, t
+
+
+class NormalizingFlow(nn.Module):
+    def __init__(self, C):
+        super(NormalizingFlow, self).__init__()
+        self.R1 = MobiusFlow(C)
+        self.t1 = EuclideanFlow(C)
+        self.R2 = MobiusFlow(C)
+        self.t2 = EuclideanFlow(C)
+
+    def se3_log_probability_normal(self, t, R, t_tar, R_tar, std):
+        dR = torch.transpose(R_tar, 1, 2) @ R
+        dtheta = so3.log_map(dR)
+        dx = (t - t_tar)
+        dist = torch.cat((dx, dtheta), dim=-1)
+        return -.5 * dist.pow(2).sum(-1) / (std.pow(2))
+
+    def forward(self, R, t, C):
+        B = R.shape[0]
+        log_jacobs = 0
+
+        R_mu = torch.eye(3).repeat(B, 1, 1)
+        t_mu = torch.zeros(3).repeat(B, 1)
+        std = 0.3 * torch.ones(B)
+
+        R, t, log_j = self.R1.forward(R, t, C)
+        log_jacobs += log_j
+        R, t, log_j = self.t1.forward(R, t, C)
+        log_jacobs += log_j
+        R, t, log_j = self.R2.forward(R, t, C)
+        log_jacobs += log_j
+        R, t, log_j = self.t2.forward(R, t, C)
+        log_jacobs += log_j
+
+        log_pz = self.se3_log_probability_normal(t, R, t_mu, R_mu, std)
+        log_jacobs += log_pz
+
+        return R, t, log_jacobs
+
+    def inverse(self, R, t, C):
+        R, t = self.R1.inverse(R, t, C)
+        R, t = self.t1.inverse(R, t, C)
+        R, t = self.R2.inverse(R, t, C)
+        R, t = self.t2.inverse(R, t, C)
+        return R, t
 
 
 if __name__ == "__main__":
