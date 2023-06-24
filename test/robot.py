@@ -36,10 +36,10 @@ for i in range(n_dof):
     joint_draw.append(ax.plot([joint_origin[0], xs[i]], [joint_origin[1], ys[i]], 'o-k'))
     joint_origin = np.array([xs[i], ys[i]])
 
-hand_points = np.array([[0, -0.2],
-                        [0, 0.2],
-                        [0.2, -0.2],
-                        [0.2, 0.2]])
+hand_points = np.array([[0, -0.5],
+                        [0, 0.5],
+                        [0.5, -0.5],
+                        [0.5, 0.5]])
 hand_edges = [[0, 1], [0, 2], [1, 3]]
 
 hand_cos = np.cos(thetas[-1])
@@ -74,10 +74,10 @@ def update(frame):
         joint_draw[i][0].set_ydata([joint_origin[1], ys[i]])
         joint_origin = np.array([xs[i], ys[i]])
 
-    hand_points = np.array([[0, -0.2],
-                            [0, 0.2],
-                            [0.2, -0.2],
-                            [0.2, 0.2]])
+    hand_points = np.array([[0, -0.5],
+                            [0, 0.5],
+                            [0.5, -0.5],
+                            [0.5, 0.5]])
     hand_edges = [[0, 1], [0, 2], [1, 3]]
 
     hand_cos = np.cos(thetas[-1])
