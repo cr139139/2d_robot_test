@@ -5,7 +5,7 @@ from normalizing_flow import NormalizingFlow
 dataset = GraspDataset()
 training_loader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=True)
 model = NormalizingFlow(6)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-6)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 epochs = 1000000
 
 for epoch_index in range(epochs):
@@ -20,9 +20,9 @@ for epoch_index in range(epochs):
         loss.backward()
         optimizer.step()
         running_loss += loss.item()
-        print('epoch {} batch {} loss: {}'.format(epoch_index + 1, i + 1, loss.item()))
 
     if epoch_index % 1000 == 0:
+        print('epoch {} batch {} loss: {}'.format(epoch_index + 1, i + 1, loss.item()))
         torch.save({
             'epoch': epoch_index,
             'model_state_dict': model.state_dict(),

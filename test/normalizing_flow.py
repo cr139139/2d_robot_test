@@ -8,11 +8,11 @@ class EuclideanFlow(nn.Module):
     def __init__(self, C):
         super(EuclideanFlow, self).__init__()
         self.net = nn.Sequential(
-            nn.Linear(C + 9, 128),
+            nn.Linear(C + 9, 256),
             nn.ReLU(),
-            nn.Linear(128, 128),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(128, 3 * 2)
+            nn.Linear(256, 3 * 2)
         )
 
     def forward(self, R, t, C):
@@ -35,11 +35,11 @@ class MobiusFlow(nn.Module):
     def __init__(self, C):
         super(MobiusFlow, self).__init__()
         self.net = nn.Sequential(
-            nn.Linear(C + 3, 128),
+            nn.Linear(C + 3, 256),
             nn.ReLU(),
-            nn.Linear(128, 128),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(128, 3),
+            nn.Linear(256, 3),
             nn.Tanh()
         )
 
@@ -70,7 +70,7 @@ class MobiusFlow(nn.Module):
         w_ = w_ / torch.norm(w_, dim=1, keepdim=True)
         c1 = R[:, :, 2]
         c2 = R[:, :, 0]
-        w = w_ - c1 * (torch.inner(c1, w_))
+        w = w_ - c1 * (c1 * w_).sum(1, keepdim=True)
 
         c2_w = c2 + w
         c2_w_l = torch.norm(c2_w, dim=1, keepdim=True)
@@ -89,6 +89,8 @@ class NormalizingFlow(nn.Module):
         self.t1 = EuclideanFlow(C)
         self.R2 = MobiusFlow(C)
         self.t2 = EuclideanFlow(C)
+        self.R3 = MobiusFlow(C)
+        self.t3 = EuclideanFlow(C)
 
     def se3_log_probability_normal(self, t, R, t_tar, R_tar, std):
         dR = torch.transpose(R_tar, 1, 2) @ R
@@ -113,6 +115,10 @@ class NormalizingFlow(nn.Module):
         log_jacobs += log_j
         R, t, log_j = self.t2.forward(R, t, C)
         log_jacobs += log_j
+        R, t, log_j = self.R3.forward(R, t, C)
+        log_jacobs += log_j
+        R, t, log_j = self.t3.forward(R, t, C)
+        log_jacobs += log_j
 
         log_pz = self.se3_log_probability_normal(t, R, t_mu, R_mu, std)
         log_jacobs += log_pz
@@ -124,6 +130,8 @@ class NormalizingFlow(nn.Module):
         R, t = self.t1.inverse(R, t, C)
         R, t = self.R2.inverse(R, t, C)
         R, t = self.t2.inverse(R, t, C)
+        R, t = self.R3.inverse(R, t, C)
+        R, t = self.t3.inverse(R, t, C)
         return R, t
 
 
