@@ -8,75 +8,97 @@ class EuclideanFlow(nn.Module):
     def __init__(self, C):
         super(EuclideanFlow, self).__init__()
         self.net = nn.Sequential(
-            nn.Linear(C + 9, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 3 * 2)
+            nn.Linear(C + 9, 16),
+            nn.LeakyReLU(),
+            nn.Linear(16, 16),
+            nn.LeakyReLU(),
+            nn.Linear(16, 2 * 2),
+            nn.Sigmoid()
         )
 
     def forward(self, R, t, C):
         input = torch.concatenate([C, R.reshape((-1, 9))], dim=1)
-        output = self.net(input)
-        sig, mu = output[:, :3], output[:, 3:]
-        t_new = t * torch.exp(sig) + mu
+        output = (self.net(input) - 0.5) * 2
+        sig, mu = output[:, :2], output[:, 2:]
+        t_new = torch.zeros(t.shape)
+        t_new[:, :2] = t[:, :2] * torch.exp(sig) + mu
         log_det = sig.sum(-1)
+        # print("t_new: ", torch.isnan(t_new).any())
+        # print("sig: ", torch.isnan(sig).any())
+        # print("mu: ", torch.isnan(mu).any())
         return R, t_new, log_det
 
     def inverse(self, R, t, C):
         input = torch.concatenate([C, R.reshape((-1, 9))], dim=1)
-        output = self.net(input)
-        sig, mu = output[:, :3], output[:, 3:]
-        t_new = (t - mu) * torch.exp(-sig)
+        output = (self.net(input) - 0.5) * 2
+        sig, mu = output[:, :2], output[:, 2:]
+        t_new = torch.zeros(t.shape)
+        t_new[:, :2] = (t[:, :2] - mu) * torch.exp(-sig)
         return R, t_new
 
 
 class MobiusFlow(nn.Module):
     def __init__(self, C):
         super(MobiusFlow, self).__init__()
+
         self.net = nn.Sequential(
-            nn.Linear(C + 3, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 3),
-            nn.Tanh()
+            nn.Linear(C + 3, 16),
+            nn.LeakyReLU(),
+            nn.Linear(16, 16),
+            nn.LeakyReLU(),
+            nn.Linear(16, 3),
+            nn.Sigmoid()
         )
 
     def forward(self, R, t, C):
         input = torch.concatenate([C, t], dim=1)
-        w_ = self.net(input) / math.sqrt(2)
+        w_ = self.net(input) - 0.5
         c1 = R[:, :, 2]
         c2 = R[:, :, 0]
         w = w_ - c1 * (c1 * w_).sum(1, keepdim=True)
 
         c2_w = c2 - w
         c2_w_l = torch.norm(c2_w, dim=1, keepdim=True)
-        constant = (1 - torch.norm(w, dim=1, keepdim=True) ** 2) / c2_w_l
+        constant = (1 - torch.norm(w, dim=1, keepdim=True) ** 2) / c2_w_l ** 2
 
-        c2_new = constant ** 2 * c2_w - w
+        c2_new = constant * c2_w - w
         c3_new = torch.cross(c1, c2_new)
         R_new = torch.stack([c2_new, c3_new, c1], dim=2)
 
         B = R.shape[0]
-        J = constant[:, :, None] * (torch.eye(3).reshape((1, 3, 3)).repeat(B, 1, 1) - 2 * c2_w[:, :, None] @ c2_w[:, None, :]) / c2_w_l[:, :, None] ** 2
+        J = constant[:, :, None] * (
+                    torch.eye(3).reshape((1, 3, 3)).repeat(B, 1, 1) - 2 * c2_w[:, :, None] @ c2_w[:, None, :] / c2_w_l[
+                                                                                                                 :, :,
+                                                                                                                 None] ** 2)
         dc_dtheta = R[:, :, 1:2]
         log_det = torch.norm(J @ dc_dtheta, dim=1)[:, 0]
+        # print("log_det: ", torch.isnan(log_det).any())
+
+        # print("input: ", torch.isnan(input).any())
+        # print("R: ", torch.isnan(C).any())
+        # print("t: ", torch.isnan(t).any())
+        # print("w_: ", torch.isnan(w_).any())
+        # print(torch.norm(w, dim=1))
+        # print("w: ", torch.isnan(w).any())
+        # print("constant: ", torch.isnan(constant).any())
+        # print("R_new: ", torch.isnan(R_new).any())
+        # print("J: ", torch.isnan(J).any())
+
         return R_new, t, log_det
 
     def inverse(self, R, t, C):
         input = torch.concatenate([C, t], dim=1)
-        w_ = self.net(input) / math.sqrt(2)
-        w_ = w_ / torch.norm(w_, dim=1, keepdim=True)
+        w_ = self.net(input) - 0.5
+        # print(torch.norm(w_, dim=1))
         c1 = R[:, :, 2]
         c2 = R[:, :, 0]
         w = w_ - c1 * (c1 * w_).sum(1, keepdim=True)
 
         c2_w = c2 + w
         c2_w_l = torch.norm(c2_w, dim=1, keepdim=True)
-        constant = (1 - torch.norm(w, dim=1, keepdim=True) ** 2) / c2_w_l
+        constant = (1 - torch.norm(w, dim=1, keepdim=True) ** 2) / c2_w_l ** 2
 
-        c2_new = constant ** 2 * c2_w + w
+        c2_new = constant * c2_w + w
         c3_new = torch.cross(c1, c2_new)
         R_new = torch.stack([c2_new, c3_new, c1], dim=2)
         return R_new, t
@@ -85,17 +107,32 @@ class MobiusFlow(nn.Module):
 class NormalizingFlow(nn.Module):
     def __init__(self, C):
         super(NormalizingFlow, self).__init__()
-        self.R1 = MobiusFlow(C)
-        self.t1 = EuclideanFlow(C)
-        self.R2 = MobiusFlow(C)
-        self.t2 = EuclideanFlow(C)
-        self.R3 = MobiusFlow(C)
-        self.t3 = EuclideanFlow(C)
+        self.net = nn.ModuleList(
+            [MobiusFlow(C),
+             EuclideanFlow(C),
+             MobiusFlow(C),
+             EuclideanFlow(C),
+             MobiusFlow(C),
+             EuclideanFlow(C),
+             MobiusFlow(C),
+             EuclideanFlow(C),
+             MobiusFlow(C),
+             EuclideanFlow(C),
+             MobiusFlow(C),
+             EuclideanFlow(C),
+             MobiusFlow(C),
+             EuclideanFlow(C),
+             MobiusFlow(C),
+             EuclideanFlow(C),
+             ]
+        )
 
     def se3_log_probability_normal(self, t, R, t_tar, R_tar, std):
         dR = torch.transpose(R_tar, 1, 2) @ R
         dtheta = so3.log_map(dR)
         dx = (t - t_tar)
+        # return (-.5 * dx.pow(2).sum(-1) / (std.pow(2))) + (-.5 * dtheta.pow(2).sum(-1) / (std.pow(2)))
+
         dist = torch.cat((dx, dtheta), dim=-1)
         return -.5 * dist.pow(2).sum(-1) / (std.pow(2))
 
@@ -105,20 +142,11 @@ class NormalizingFlow(nn.Module):
 
         R_mu = torch.eye(3).repeat(B, 1, 1)
         t_mu = torch.zeros(3).repeat(B, 1)
-        std = 0.3 * torch.ones(B)
+        std = 1 * torch.ones(B)
 
-        R, t, log_j = self.R1.forward(R, t, C)
-        log_jacobs += log_j
-        R, t, log_j = self.t1.forward(R, t, C)
-        log_jacobs += log_j
-        R, t, log_j = self.R2.forward(R, t, C)
-        log_jacobs += log_j
-        R, t, log_j = self.t2.forward(R, t, C)
-        log_jacobs += log_j
-        R, t, log_j = self.R3.forward(R, t, C)
-        log_jacobs += log_j
-        R, t, log_j = self.t3.forward(R, t, C)
-        log_jacobs += log_j
+        for layer in self.net:
+            R, t, log_j = layer.forward(R, t, C)
+            log_jacobs += log_j
 
         log_pz = self.se3_log_probability_normal(t, R, t_mu, R_mu, std)
         log_jacobs += log_pz
@@ -126,12 +154,8 @@ class NormalizingFlow(nn.Module):
         return R, t, log_jacobs
 
     def inverse(self, R, t, C):
-        R, t = self.R1.inverse(R, t, C)
-        R, t = self.t1.inverse(R, t, C)
-        R, t = self.R2.inverse(R, t, C)
-        R, t = self.t2.inverse(R, t, C)
-        R, t = self.R3.inverse(R, t, C)
-        R, t = self.t3.inverse(R, t, C)
+        for layer in self.net[::-1]:
+            R, t = layer.inverse(R, t, C)
         return R, t
 
 

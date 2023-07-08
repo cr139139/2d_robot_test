@@ -66,7 +66,8 @@ def exp_map(phi):
 def log_map(R):
     R = R.reshape((-1, 9))
     c = 0.5 * (R[:, 0] + R[:, 4] + R[:, 8]) - 0.5
-    c = torch.clip(c, -1., 1.)
+    eps = 1e-7
+    c = torch.clip(c, -1. + eps, 1. - eps)
     angle = torch.acos(c)[:, None]
 
     def ordinary(R, angle):

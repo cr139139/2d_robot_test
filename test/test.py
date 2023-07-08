@@ -6,7 +6,7 @@ import math
 import matplotlib.pyplot as plt
 
 model = NormalizingFlow(6)
-PATH = './weights/epoch62001.pth'
+PATH = './weights/epoch98001.pth'
 checkpoint = torch.load(PATH)
 model.load_state_dict(checkpoint['model_state_dict'])
 
@@ -14,8 +14,10 @@ model.load_state_dict(checkpoint['model_state_dict'])
 def sample_from_se3_gaussian(x_tar, R_tar, std):
     x_eps = std[:, None] * torch.randn_like(x_tar)
     theta_eps = std[:, None] * torch.randn_like(x_tar)
+    x_eps[:, 2] = 0
+    theta_eps[:, 1] = 0
+    theta_eps[:, 0] = 0
     rot_eps = so3.exp_map(theta_eps)
-
     _x = x_tar + x_eps
     _R = torch.einsum('bmn,bnk->bmk', R_tar, rot_eps)
     return _x, _R
@@ -23,30 +25,29 @@ def sample_from_se3_gaussian(x_tar, R_tar, std):
 
 B = 100
 R_mu = torch.eye(3).repeat(B, 1, 1)
-x_mu = torch.ones(3).repeat(B, 1)
-std = 0.3 * torch.ones(B)
+x_mu = torch.zeros(3).repeat(B, 1)
+std = 1 * torch.ones(B)
 
 x_samples, R_samples = sample_from_se3_gaussian(x_mu, R_mu, std)
-
-theta = np.random.uniform(0, math.pi * 2)
+print(x_samples, R_samples)
+theta = 0 #np.random.uniform(0, math.pi * 2)
 c = math.cos(theta)
 s = math.sin(theta)
 R = torch.tensor([[c, -s],
                   [s, c]])
-t = torch.from_numpy(np.random.uniform(-5, 5, size=2)).to(torch.float)
+# t = torch.from_numpy(np.random.uniform(-5, 5, size=2)).to(torch.float)
+t = torch.zeros(2)
 
 C = torch.concatenate([R.reshape(4), t]).repeat(B, 1)
-
 grasp_R, grasp_t = model.inverse(R_samples, x_samples, C)
-
+print(grasp_R, grasp_t)
 grasp_R = grasp_R.detach().numpy()
 grasp_t = grasp_t.detach().numpy()
 grasp_R = grasp_R[:, :2, :2]
 grasp_t = grasp_t[:, :2]
 
-w = 200
-r = 10
-
+w = 100
+r = 2
 x = torch.linspace(-r, r, steps=w)
 y = torch.linspace(-r, r, steps=w)
 x_index, y_index = torch.meshgrid(x, y, indexing="xy")
