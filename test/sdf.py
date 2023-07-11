@@ -15,6 +15,16 @@ def sdf(p, shape="circle"):
             + torch.clamp(torch.max(d, dim=1, keepdim=True)[0], max=0.0)
 
 
+def sdf_grad(p, shape="circle"):
+    if shape == 'circle':
+        return p / torch.norm(p, dim=1, keepdim=True)
+    elif shape == 'box':
+        b = torch.tensor([0.25, 0.25])
+        d = torch.abs(p) - b
+        return torch.norm(torch.clamp(d, min=0.0), dim=1, keepdim=True) \
+            + torch.clamp(torch.max(d, dim=1, keepdim=True)[0], max=0.0)
+
+
 def grasp_sample(R=torch.eye(2), t=torch.zeros(2), shape="circle"):
     grasp_R = torch.tensor([[[1., 0.],
                              [0., 1.]]])
@@ -87,7 +97,6 @@ def show_slice(sdf, grasp, R, t, shape, w=100, r=1):
     plt.xlabel('x')
     plt.ylabel('y')
     plt.show()
-
 
 # theta = math.pi / 3
 # c = math.cos(theta)

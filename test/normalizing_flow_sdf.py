@@ -2,112 +2,19 @@ import torch
 from torch import nn
 import math
 import so3
-
-
-class EuclideanFlow(nn.Module):
-    def __init__(self, C):
-        super(EuclideanFlow, self).__init__()
-        self.net = nn.Sequential(
-            nn.Linear(C + 9, 16),
-            nn.LeakyReLU(),
-            nn.Linear(16, 16),
-            nn.LeakyReLU(),
-            nn.Linear(16, 2 * 2),
-            nn.Sigmoid()
-        )
-
-    def forward(self, R, t, C):
-        input = torch.concatenate([C, R.reshape((-1, 9))], dim=1)
-        output = (self.net(input) - 0.5) * 2
-        sig, mu = output[:, :2], output[:, 2:]
-        t_new = torch.zeros(t.shape)
-        t_new[:, :2] = t[:, :2] * torch.exp(sig) + mu
-        log_det = sig.sum(-1)
-        return R, t_new, log_det
-
-    def inverse(self, R, t, C):
-        input = torch.concatenate([C, R.reshape((-1, 9))], dim=1)
-        output = (self.net(input) - 0.5) * 2
-        sig, mu = output[:, :2], output[:, 2:]
-        t_new = torch.zeros(t.shape)
-        t_new[:, :2] = (t[:, :2] - mu) * torch.exp(-sig)
-        return R, t_new
-
-
-class MobiusFlow(nn.Module):
-    def __init__(self, C):
-        super(MobiusFlow, self).__init__()
-
-        self.net = nn.Sequential(
-            nn.Linear(C + 3, 16),
-            nn.LeakyReLU(),
-            nn.Linear(16, 16),
-            nn.LeakyReLU(),
-            nn.Linear(16, 3),
-            nn.Sigmoid()
-        )
-
-    def forward(self, R, t, C):
-        input = torch.concatenate([C, t], dim=1)
-        w_ = self.net(input) - 0.5
-        c1 = R[:, :, 2]
-        c2 = R[:, :, 0]
-        w = w_ - c1 * (c1 * w_).sum(1, keepdim=True)
-
-        c2_w = c2 - w
-        c2_w_l = torch.norm(c2_w, dim=1, keepdim=True)
-        constant = (1 - torch.norm(w, dim=1, keepdim=True) ** 2) / c2_w_l ** 2
-
-        c2_new = constant * c2_w - w
-        c3_new = torch.cross(c1, c2_new)
-        R_new = torch.stack([c2_new, c3_new, c1], dim=2)
-
-        B = R.shape[0]
-        J = constant[:, :, None] * (
-                    torch.eye(3).reshape((1, 3, 3)).repeat(B, 1, 1) - 2 * c2_w[:, :, None] @ c2_w[:, None, :] / c2_w_l[
-                                                                                                                 :, :,
-                                                                                                                 None] ** 2)
-        dc_dtheta = R[:, :, 1:2]
-        log_det = torch.norm(J @ dc_dtheta, dim=1)[:, 0]
-        return R_new, t, log_det
-
-    def inverse(self, R, t, C):
-        input = torch.concatenate([C, t], dim=1)
-        w_ = self.net(input) - 0.5
-        c1 = R[:, :, 2]
-        c2 = R[:, :, 0]
-        w = w_ - c1 * (c1 * w_).sum(1, keepdim=True)
-
-        c2_w = c2 + w
-        c2_w_l = torch.norm(c2_w, dim=1, keepdim=True)
-        constant = (1 - torch.norm(w, dim=1, keepdim=True) ** 2) / c2_w_l ** 2
-
-        c2_new = constant * c2_w + w
-        c3_new = torch.cross(c1, c2_new)
-        R_new = torch.stack([c2_new, c3_new, c1], dim=2)
-        return R_new, t
+from vnn import VNTSVD
+from normalizing_flow import SE3Flow
 
 
 class NormalizingFlow(nn.Module):
-    def __init__(self, C):
+    def __init__(self):
         super(NormalizingFlow, self).__init__()
+        self.transformation = VNTSVD(2, 8)
         self.net = nn.ModuleList(
-            [MobiusFlow(C),
-             EuclideanFlow(C),
-             MobiusFlow(C),
-             EuclideanFlow(C),
-             MobiusFlow(C),
-             EuclideanFlow(C),
-             MobiusFlow(C),
-             EuclideanFlow(C),
-             MobiusFlow(C),
-             EuclideanFlow(C),
-             MobiusFlow(C),
-             EuclideanFlow(C),
-             MobiusFlow(C),
-             EuclideanFlow(C),
-             MobiusFlow(C),
-             EuclideanFlow(C),
+            [SE3Flow(8 * 3),
+             SE3Flow(8 * 3),
+             SE3Flow(8 * 3),
+             SE3Flow(8 * 3),
              ]
         )
 
@@ -120,22 +27,41 @@ class NormalizingFlow(nn.Module):
 
     def forward(self, R, t, C):
         B = R.shape[0]
+        Rc, tc, _, _, _, C = self.transformation.forward(C)
+        C = C.reshape((B, -1))
+        R = Rc.transpose(1, -1) @ R
+        t = Rc.transpose(1, -1) @ (t[:, :, None] - tc)
+        t = t.reshape([B, -1])
+
         log_jacobs = 0
 
         R_mu = torch.eye(3).repeat(B, 1, 1)
         t_mu = torch.zeros(3).repeat(B, 1)
         std = 1 * torch.ones(B)
 
+        Rs = []
+        ts = []
+
         for layer in self.net:
             R, t, log_j = layer.forward(R, t, C)
+            Rs.append(R)
+            ts.append(t)
             log_jacobs += log_j
 
         log_pz = self.se3_log_probability_normal(t, R, t_mu, R_mu, std)
-        log_jacobs += log_pz
 
-        return R, t, log_jacobs
+        return Rs, ts, log_jacobs, log_pz
 
     def inverse(self, R, t, C):
+        B = R.shape[0]
+        Rc, tc, _, _, _, C = self.transformation.forward(C)
+        # print(Rc, tc)
+        C = C.reshape((B, -1))
+        Rs = []
+        ts = []
+
         for layer in self.net[::-1]:
             R, t = layer.inverse(R, t, C)
-        return R, t
+            Rs.append(Rc @ R)
+            ts.append((Rc @ t[:, :, None] + tc).reshape([B, -1]))
+        return Rs, ts

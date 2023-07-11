@@ -120,7 +120,7 @@ if __name__ == "__main__":
     R = torch.tensor([[c, -s, 0],
                       [s, c, 0],
                       [0, 0, 1.]])
-    t = torch.tensor([1., 2., 3.])
+    t = torch.tensor([1., 2., 0.])
 
     test = 2
 
@@ -142,6 +142,7 @@ if __name__ == "__main__":
         print(yt - ytt)
     elif test == 2:
         xo = torch.rand((1, 8, 3, 2))
+        xo[:, :, 2, :] = 0
         xt = (R[None, None, :, :] @ xo) + t[None, None, :, None]
         layer = VNTSVD(2, 16)
         Ro, to, ao, cdo, Ao, Bo = layer.forward(xo)
@@ -154,15 +155,15 @@ if __name__ == "__main__":
         # print(cdo)
         # print(cdt)
 
-        # print(Ro)
-        # print(to)
-        # print(Rt)
-        # print(tt)
+        print(Ro)
+        print(to)
+        print(Rt)
+        print(tt)
 
-        print(Ro @ Bo + to)
-        print(Ao)
-        print(Rt @ Bt + tt)
-        print(At)
+        # print(Ro @ Bo + to)
+        # print(Ao)
+        # print(Rt @ Bt + tt)
+        # print(At)
 
         # print(Bo)
         # print(Ro.transpose(1, -1) @ (Ao - to))
