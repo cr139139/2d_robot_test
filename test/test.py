@@ -6,9 +6,11 @@ import math
 import matplotlib.pyplot as plt
 
 model = NormalizingFlow(6)
-PATH = './weights/epoch98001.pth'
+PATH = './weights/epoch1001.pth'
 checkpoint = torch.load(PATH)
 model.load_state_dict(checkpoint['model_state_dict'])
+
+torch.manual_seed(0)
 
 
 def sample_from_se3_gaussian(x_tar, R_tar, std):
@@ -27,10 +29,10 @@ B = 100
 R_mu = torch.eye(3).repeat(B, 1, 1)
 x_mu = torch.zeros(3).repeat(B, 1)
 std = 1 * torch.ones(B)
-
 x_samples, R_samples = sample_from_se3_gaussian(x_mu, R_mu, std)
+
 print(x_samples, R_samples)
-theta = 0 #np.random.uniform(0, math.pi * 2)
+theta = 0  # np.random.uniform(0, math.pi * 2)
 c = math.cos(theta)
 s = math.sin(theta)
 R = torch.tensor([[c, -s],
@@ -39,7 +41,9 @@ R = torch.tensor([[c, -s],
 t = torch.zeros(2)
 
 C = torch.concatenate([R.reshape(4), t]).repeat(B, 1)
-grasp_R, grasp_t = model.inverse(R_samples, x_samples, C)
+grasp_Rs, grasp_ts = model.inverse(R_samples, x_samples, C)
+n_way = 4
+grasp_R, grasp_t = grasp_Rs[n_way], grasp_ts[n_way]
 print(grasp_R, grasp_t)
 grasp_R = grasp_R.detach().numpy()
 grasp_t = grasp_t.detach().numpy()
