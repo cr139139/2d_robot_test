@@ -6,7 +6,7 @@ import math
 import matplotlib.pyplot as plt
 
 model = NormalizingFlow()
-PATH = './weights/epoch10001.pth'
+PATH = './weights/epoch99001.pth'
 checkpoint = torch.load(PATH)
 model.load_state_dict(checkpoint['model_state_dict'])
 
