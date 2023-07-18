@@ -79,9 +79,9 @@ def log_map(R):
         phi = torch.stack([R[:, 7], R[:, 2], R[:, 3]]).T
         return phi
 
-    indexing = torch.isclose(angle, torch.zeros(angle.shape))
+    indexing = torch.isclose(angle, torch.zeros(angle.shape).to(torch.device("cuda:0")))
 
-    phi = torch.empty((R.shape[0], 3))
+    phi = torch.empty((R.shape[0], 3)).to(torch.device("cuda:0"))
     phi[indexing[:, 0], :] = first_order_taylor(R[indexing[:, 0], :])
     phi[torch.logical_not(indexing)[:, 0], :] = ordinary(R[torch.logical_not(indexing)[:, 0], :],
                                                          angle[torch.logical_not(indexing)[:, 0], :])

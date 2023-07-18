@@ -4,18 +4,18 @@ from normalizing_flow import NormalizingFlow
 from dataloader import GraspDataset
 from grasp_visualization import visualize_grasps
 
-model = NormalizingFlow(64)
-PATH = './weights/epoch41.pth'
+model = NormalizingFlow(128)
+PATH = './weights/epoch1.pth'
 checkpoint = torch.load(PATH)
 model.load_state_dict(checkpoint['model_state_dict'])
 torch.manual_seed(0)
-
+print(torch.cuda.is_available())
 
 def sample_from_se3_gaussian(x_tar, R_tar, std):
     x_eps = std[:, None] * torch.randn_like(x_tar)
     theta_eps = std[:, None] * torch.randn_like(x_tar)
     rot_eps = so3.exp_map(theta_eps)
-    _x = x_tar + x_eps
+    _x = x_tar + x_epsw
     _R = torch.einsum('bmn,bnk->bmk', R_tar, rot_eps)
     return _x, _R
 
@@ -31,7 +31,10 @@ training_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=Fal
 
 for i, data in enumerate(training_loader):
     object_info, _ = data
+    import time
+    start = time.time()
     grasp_R, grasp_t = model.inverse(R_samples, x_samples, object_info.repeat(B, 1, 1, 1))
+    print(time.time() - start)
 
     xyz = torch.concatenate([object_info[0, :, :, 0], object_info[0, :, :, 1]], dim=0)
 

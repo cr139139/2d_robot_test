@@ -3,13 +3,19 @@ from dataloader import GraspDataset
 from normalizing_flow import NormalizingFlow
 
 dataset = GraspDataset()
-training_loader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=True)
-model = NormalizingFlow(64)
+training_loader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=True)
+model = NormalizingFlow(128)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 epochs = 1000
 flag = 0
 torch.autograd.set_detect_anomaly(True)
 
+if torch.cuda.is_available():
+    dev = "cuda:0"
+else:
+    dev = "cpu"
+device = torch.device(dev)
+model.to(device)
 
 for epoch_index in range(epochs):
     running_loss = 0.
@@ -17,6 +23,8 @@ for epoch_index in range(epochs):
         break
     for i, data in enumerate(training_loader):
         object_info, grasp_T = data
+        object_info = object_info.to(device)
+        grasp_T = grasp_T.to(device)
         optimizer.zero_grad()
         Rs, ts, log_jacobs, log_pz = model.forward(grasp_T[:, :3, :3], grasp_T[:, :3, 3], object_info)
         loss = 0

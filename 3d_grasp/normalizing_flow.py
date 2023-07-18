@@ -23,10 +23,10 @@ class EuclideanFlow(nn.Module):
 
     def forward(self, R, t, C):
         t_fixed = t[:, self.xyz_index][:, None]
-        input = torch.concatenate([C, R.reshape((-1, 9)), t_fixed], dim=1)
+        input = torch.concatenate([C, R.reshape((-1, 9)).to(torch.device("cuda:0")), t_fixed], dim=1)
         output = (self.net(input) - 0.5) * 2
         sig, mu = output[:, :2], output[:, 2:]
-        t_new = torch.zeros(t.shape)
+        t_new = torch.zeros(t.shape).to(torch.device("cuda:0"))
         t_new[:, self.xyz_index] = t[:, self.xyz_index]
         t_new[:, self.inverse_xyz_index] = t[:, self.inverse_xyz_index] * torch.exp(sig) + mu
         log_det = sig.sum(-1)
@@ -58,12 +58,12 @@ class MobiusFlow(nn.Module):
         )
 
     def forward(self, R, t, C):
-        c1 = R[:, :, self.xyz_index]
+        c1 = R[:, :, self.xyz_index].to(torch.device("cuda:0"))
         # print(C.shape, t.shape, c1.shape)
         input = torch.concatenate([C, t, c1], dim=1)
         # print(input.shape)
         w_ = self.net(input) - 0.5
-        c2 = R[:, :, (self.xyz_index + 1) % 3]
+        c2 = R[:, :, (self.xyz_index + 1) % 3].to(torch.device("cuda:0"))
         w = w_ - c1 * (c1 * w_).sum(1, keepdim=True)
 
         c2_w = c2 - w
@@ -80,9 +80,9 @@ class MobiusFlow(nn.Module):
         R_new[:, :, (self.xyz_index + 2) % 3] = c3_new
 
         J = constant[:, :, None] * \
-            (torch.eye(3).reshape((1, 3, 3)).repeat(B, 1, 1)
+            (torch.eye(3).reshape((1, 3, 3)).repeat(B, 1, 1).to(torch.device("cuda:0"))
              - 2 * c2_w[:, :, None] @ c2_w[:, None, :] / c2_w_l[:, :, None] ** 2)
-        dc_dtheta = R[:, :, self.xyz_index - 1][:, :, None]
+        dc_dtheta = R[:, :, self.xyz_index - 1][:, :, None].to(torch.device("cuda:0"))
         log_det = torch.norm(J @ dc_dtheta, dim=1)[:, 0]
         return R_new, t, log_det
 
@@ -115,8 +115,6 @@ class SE3Flow(nn.Module):
              EuclideanFlow(n_shape, 0),
              MobiusFlow(n_shape, 1),
              EuclideanFlow(n_shape, 1),
-             MobiusFlow(n_shape, 2),
-             EuclideanFlow(n_shape, 2),
              ]
         )
 
@@ -142,6 +140,10 @@ class NormalizingFlow(nn.Module):
         self.net = nn.ModuleList(
             [SE3Flow(n_shape * 3),
              SE3Flow(n_shape * 3),
+             SE3Flow(n_shape * 3),
+             SE3Flow(n_shape * 3),
+             SE3Flow(n_shape * 3),
+             SE3Flow(n_shape * 3),
              ]
         )
 
@@ -162,9 +164,9 @@ class NormalizingFlow(nn.Module):
         # t = (Rc.transpose(1, -1) @ t[:, :, None]).reshape([B, -1])
         log_jacobs = 0
 
-        R_mu = torch.eye(3).repeat(B, 1, 1)
-        t_mu = torch.zeros(3).repeat(B, 1)
-        std = 1 * torch.ones(B)
+        R_mu = torch.eye(3).repeat(B, 1, 1).to(torch.device("cuda:0"))
+        t_mu = torch.zeros(3).repeat(B, 1).to(torch.device("cuda:0"))
+        std = 1 * torch.ones(B).to(torch.device("cuda:0"))
 
         Rs = [R]
         ts = [t]
@@ -175,7 +177,7 @@ class NormalizingFlow(nn.Module):
             ts.append(t)
             log_jacobs += log_j
 
-        log_pz = self.se3_log_probability_normal(t, R, t_mu, R_mu, std)
+        log_pz = self.se3_log_probability_normal(t.to(torch.device("cuda:0")), R.to(torch.device("cuda:0")), t_mu, R_mu, std)
 
         return Rs, ts, log_jacobs, log_pz
 
