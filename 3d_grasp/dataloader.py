@@ -2,38 +2,23 @@ import torch
 from torch.utils.data import Dataset
 import math
 import numpy as np
-import sdf
-
+import csv
+import open3d as o3d
+from sklearn.neighbors import KDTree
 
 class GraspDataset(Dataset):
-    def __init__(self, shape='circle'):
-        self.shape = shape
-        self.grasp_R, self.grasp_t, self.grasp_success = self.sample_grasps(shape=shape)
-        self.n = self.grasp_R.shape[0]
+    def __init__(self):
+        self.files = self.openfile()
+        self.n = len(self.files)
 
-    def sample_grasps(self, shape="circle"):
-        grasp_R = torch.tensor([[[1., 0.],
-                                 [0., 1.]]])
-        grasp_t = torch.tensor([[-0.5, 0.]])
-
-        n = 8
-
-        theta = math.pi * 2 / n
-        c = math.cos(theta)
-        s = math.sin(theta)
-        generate_R = torch.tensor([[c, -s],
-                                   [s, c]])
-
-        for i in range(n - 1):
-            grasp_R = torch.concatenate([grasp_R, (generate_R @ grasp_R[-1])[None, :, :]])
-            grasp_t = torch.concatenate([grasp_t, (generate_R @ grasp_t[-1])[None, :]])
-
-        if shape == 'circle':
-            grasp_success = torch.ones(n)
-        elif shape == 'box':
-            grasp_success = torch.tensor([1, 0]).repeat(n // 2)
-
-        return grasp_R, grasp_t, grasp_success
+    def openfile(self):
+        filename = "datasets.csv"
+        with open(filename, 'r') as csvfile:
+            csvreader = csv.reader(csvfile)
+            files = []
+            for lines in csvreader:
+                files.append(lines)
+        return files
 
     def __len__(self):
         return self.n
@@ -42,30 +27,17 @@ class GraspDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        # theta = np.random.uniform(0, math.pi * 2)
-        theta = np.random.uniform(-math.pi / 180, math.pi / 180)
-        c = math.cos(theta)
-        s = math.sin(theta)
-        R = torch.eye(3, dtype=torch.float)
-        R[:2, :2] = torch.tensor([[c, -s],
-                                  [s, c]])
-        t = torch.from_numpy(np.random.uniform(-5, 5, size=3)).to(torch.float)
-        t[2] = 0
-        # t = torch.zeros(3)
+        data = np.load(self.files[idx][0])
+        pcd = o3d.io.read_point_cloud(self.files[idx][1])
+        pcd = np.asarray(pcd.points)
+        pcd_idx = np.random.randint(8000, size=256)
+        tree = KDTree(pcd)
+        nearest_dist, nearest_ind = tree.query(pcd[pcd_idx, :], k=2)
+        pcd1 = torch.from_numpy(pcd[nearest_ind[:, 0], :]).to(torch.float)[:, :, None]
+        pcd2 = torch.from_numpy(pcd[nearest_ind[:, 1], :]).to(torch.float)[:, :, None]
+        pcd = torch.concatenate([pcd1, pcd2], dim=-1)
 
-        query = torch.from_numpy(np.random.uniform(-5, 5, size=(100, 3))).to(torch.float)
-        d = sdf.sdf(sdf.transform(query, R.T, -R.T @ t), self.shape)
-        surface = query - d * sdf.sdf_grad(sdf.transform(query, R.T, -R.T @ t), self.shape)
-        shape = torch.concatenate([query[:, :, None], surface[:, :, None]], dim=-1)
+        grasps = data['grasp_transform'][data['successful'].astype(bool), :, :]
+        grasp = torch.from_numpy(grasps[np.random.randint(0, grasps.shape[0]), :, :]).to(torch.float)
 
-        grasp_R = torch.eye(3, dtype=torch.float)
-        grasp_R[:2, :2] = self.grasp_R[idx]
-        grasp_t = torch.zeros(3, dtype=torch.float)
-        grasp_t[:2] = self.grasp_t[idx]
-        grasp_success = self.grasp_success[idx]
-
-        grasp_R = R @ grasp_R
-        grasp_t = (R @ grasp_t[:, None])[:, 0] + t
-        # R = torch.eye(3, dtype=torch.float)
-
-        return grasp_R, grasp_t, grasp_success, shape #torch.concatenate([R[:2, :2].reshape(-1), t[:2]])
+        return pcd, grasp

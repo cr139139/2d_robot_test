@@ -5,9 +5,9 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 
-model = NormalizingFlow(64)
+model = NormalizingFlow(32)
 # 16001
-PATH = './weights/epoch4001.pth'
+PATH = './weights/epoch6001.pth'
 checkpoint = torch.load(PATH)
 model.load_state_dict(checkpoint['model_state_dict'])
 torch.manual_seed(1)
@@ -26,13 +26,25 @@ def sample_from_se3_gaussian(x_tar, R_tar, std):
     return _x, _R
 
 
+def sample_from_se3_uniform(B):
+    from torch.distributions.uniform import Uniform
+    _x = Uniform(-5, 5).sample((B, 3))
+    _x[:, 2] = 0
+    theta = Uniform(-5, 5).sample((B, 3))
+    theta[:, 1] = 0
+    theta[:, 0] = 0
+    _R = so3.exp_map(theta)
+    return _x, _R
+
+
 B = 100
 R_mu = torch.eye(3).repeat(B, 1, 1)
 x_mu = torch.zeros(3).repeat(B, 1)
 std = 1 * torch.ones(B)
 x_samples, R_samples = sample_from_se3_gaussian(x_mu, R_mu, std)
+# x_samples, R_samples = sample_from_se3_uniform(B)
 
-theta = np.random.uniform(-math.pi / 180, math.pi / 180)
+theta = np.random.uniform(-math.pi, math.pi)
 c = math.cos(theta)
 s = math.sin(theta)
 R = torch.eye(3, dtype=torch.float)
@@ -40,13 +52,14 @@ R[:2, :2] = torch.tensor([[c, -s],
                           [s, c]])
 t = torch.from_numpy(np.random.uniform(-5, 5, size=3)).to(torch.float)
 t[2] = 0
+t = torch.zeros(3)
 print(R, t)
 import sdf
 
-query_rand = np.random.uniform(-10, 10, size=(300, 3))
+query_rand = np.random.uniform(-1, 1, size=(100, 3))
 query = torch.from_numpy(query_rand).to(torch.float)
 query[:, 2] = 0
-query2 = torch.from_numpy(query_rand + np.random.normal(0, 1, size=(300, 3))).to(torch.float)
+query2 = torch.from_numpy(query_rand + np.random.normal(0, 1, size=(100, 3))).to(torch.float)
 query2[:, 2] = 0
 
 from functools import partial
@@ -67,7 +80,6 @@ surface2 = query2 - d2 * grad2
 query2.requires_grad_(False)
 surface2 = surface2.detach().requires_grad_(False)
 
-print((surface.mean(dim=0) + surface2.mean(dim=0)) / 2)
 # shape = torch.concatenate([query[:, :, None], surface[:, :, None]], dim=-1)
 shape = torch.concatenate([surface[:, :, None], surface2[:, :, None]], dim=-1)
 plt.plot(surface[:, 0], surface[:, 1], 'ok')

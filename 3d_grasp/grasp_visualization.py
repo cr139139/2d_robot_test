@@ -73,7 +73,10 @@ def visualize_grasps(Hs, scale=1., p_cloud=None, energies=None, colors=None, mes
     if mesh is not None:
         scene = trimesh.Scene([mesh] + grips)
     elif p_cloud is not None:
-        p_cloud_tri = trimesh.points.PointCloud(p_cloud)
+        b = p_cloud.shape[0]
+        colors = np.zeros((b, 3))
+        colors[:, 1] = 255
+        p_cloud_tri = trimesh.points.PointCloud(p_cloud, colors=colors)
         scene = trimesh.Scene([p_cloud_tri] + grips)
     else:
         scene = trimesh.Scene(grips)

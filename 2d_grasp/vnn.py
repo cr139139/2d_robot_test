@@ -14,7 +14,7 @@ class VNLinearLeakyReLU(nn.Module):
 
     def forward(self, x):
         '''
-        x: point features of shape [B, N_samples, 2, N_feat, ...]
+        x: point features of shape [B, N_samples, 3, N_feat, ...]
         '''
         p = self.map_to_feat(x)
         d = self.map_to_dir(x)
@@ -34,7 +34,7 @@ class VNTLinear(nn.Module):
 
     def forward(self, x, normalize=True):
         """
-        x: point features of shape [B, N_samples, 2, N_feat, ...]
+        x: point features of shape [B, N_samples, 3, N_feat, ...]
         """
         if normalize:
             weight = F.softmax(self.weight, dim=0)
@@ -52,7 +52,7 @@ class VNTLinearLeakyReLU(nn.Module):
 
     def forward(self, x):
         '''
-        x: point features of shape [B, N_samples, 2, N_feat, ...]
+        x: point features of shape [B, N_samples, 3, N_feat, ...]
         '''
         q = self.map_to_feat(x)
         k = self.map_to_dir(x)
@@ -76,11 +76,11 @@ class VNTSVD(nn.Module):
         self.layer_a = VNTLinearLeakyReLU(in_channels, out_channels)
         self.layer_b = VNTLinearLeakyReLU(out_channels, 1)
         self.layer_c = VNLinearLeakyReLU(out_channels, out_channels)
-        self.layer_d = VNLinearLeakyReLU(out_channels, 2)
+        self.layer_d = VNLinearLeakyReLU(out_channels, 3)
 
     def forward(self, x):
         '''
-        x: point features of shape [B, N_samples, 2, N_feat, ...]
+        x: point features of shape [B, N_samples, 3, N_feat, ...]
         '''
         a = self.layer_a(x)
         b = self.layer_b(a)
@@ -101,51 +101,10 @@ class VNTSVD(nn.Module):
         H = (A - A_cent) @ (B - B_cent).transpose(1, -1)
         U, S, Vh = torch.linalg.svd(H)
         n_batch = H.shape[0]
-        S = torch.eye(2).reshape((1, 2, 2)).repeat((n_batch, 1, 1))
-        S[:, 1, 1] = torch.linalg.det(U @ Vh)
+        S = torch.eye(3).reshape((1, 3, 3)).repeat((n_batch, 1, 1))
+        S[:, 2, 2] = torch.linalg.det(U @ Vh)
         R = U @ S @ Vh
         t = A_cent - R @ B_cent
-
-        return R, t, a, cd, A, B
-
-
-class VNTORIG(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(VNTORIG, self).__init__()
-
-        self.layer_a = VNTLinearLeakyReLU(in_channels, out_channels)
-        self.layer_b = VNTLinearLeakyReLU(out_channels, 1)
-        self.layer_c = VNLinearLeakyReLU(out_channels, out_channels)
-        self.layer_d = VNLinearLeakyReLU(out_channels, 2)
-        self.layer_e = VNLinearLeakyReLU(out_channels, 2)
-
-    def forward(self, x):
-        '''
-        x: point features of shape [B, N_samples, 2, N_feat, ...]
-        '''
-        a = self.layer_a(x)
-        b = self.layer_b(a)
-
-        ab = a - b
-
-        c = self.layer_c(ab)
-        d = self.layer_d(c)
-
-        cd = (c.transpose(2, -1) @ d).transpose(2, -1)
-
-        A = ab.mean(dim=1, keepdim=False)
-        B = cd.mean(dim=1, keepdim=False)
-
-        A_cent = A.mean(dim=2, keepdim=True)
-        B_cent = B.mean(dim=2, keepdim=True)
-
-        H = (A - A_cent) @ (B - B_cent).transpose(1, -1)
-        U, S, Vh = torch.linalg.svd(H)
-        n_batch = H.shape[0]
-        S = torch.eye(2).reshape((1, 2, 2)).repeat((n_batch, 1, 1))
-        S[:, 1, 1] = torch.linalg.det(U @ Vh)
-        R = U @ S @ Vh
-        t = b.mean(dim=1, keepdim=False)
 
         return R, t, a, cd, A, B
 
@@ -158,20 +117,20 @@ if __name__ == "__main__":
     c = math.cos(theta)
     s = math.sin(theta)
 
-    R = torch.tensor([[c, -s],
-                      [s, c]])
-    t = torch.tensor([1., 2.])
+    R = torch.tensor([[c, -s, 0],
+                      [s, c, 0],
+                      [0, 0, 1.]])
+    t = torch.tensor([1., 2., 0.])
 
-    test = 0
+    test = 2
 
     if test == 0:
-        xo = torch.rand((2, 2, 2, 2))
+        xo = torch.rand((2, 2, 3, 2))
         xt = (R[None, None, :, :] @ xo) + t[None, None, :, None]
         layer = VNTLinearLeakyReLU(2, 2)
         yo = layer.forward(xo)
         yt = layer.forward(xt)
         ytt = (R[None, None, :, :] @ yo) + t[None, None, :, None]
-        print(R, t)
         print(yt - ytt)
     elif test == 1:
         xo = torch.rand((1, 2, 3, 2))
@@ -183,7 +142,7 @@ if __name__ == "__main__":
         print(yt - ytt)
     elif test == 2:
         xo = torch.rand((1, 8, 3, 2))
-        xo[:, :, 2, :] = 0
+        # xo[:, :, 2, :] = 0
         xt = (R[None, None, :, :] @ xo) + t[None, None, :, None]
         layer = VNTSVD(2, 16)
         Ro, to, ao, cdo, Ao, Bo = layer.forward(xo)
@@ -196,15 +155,15 @@ if __name__ == "__main__":
         # print(cdo)
         # print(cdt)
 
-        print(Ro)
-        print(to)
-        print(Rt)
-        print(tt)
+        # print(Ro)
+        # print(to)
+        # print(Rt)
+        # print(tt)
 
-        # print(Ro @ Bo + to)
-        # print(Ao)
-        # print(Rt @ Bt + tt)
-        # print(At)
+        print(Ro @ Bo + to)
+        print(Ao)
+        print(Rt @ Bt + tt)
+        print(At)
 
         # print(Bo)
         # print(Ro.transpose(1, -1) @ (Ao - to))

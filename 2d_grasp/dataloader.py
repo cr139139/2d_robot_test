@@ -32,8 +32,8 @@ class GraspDataset(Dataset):
         if shape == 'circle':
             grasp_success = torch.ones(n)
         elif shape == 'box':
-            grasp_success = torch.ones(n)
-            # grasp_success = torch.tensor([1, 0]).repeat(n // 2)
+            # grasp_success = torch.ones(n)
+            grasp_success = torch.tensor([1, 0]).repeat(n // 2)
 
         return grasp_R, grasp_t, grasp_success
 
@@ -45,7 +45,7 @@ class GraspDataset(Dataset):
             idx = idx.tolist()
 
         # theta = np.random.uniform(0, math.pi * 2)
-        theta = np.random.uniform(-math.pi / 180, math.pi / 180)
+        theta = np.random.uniform(-math.pi, math.pi)
         c = math.cos(theta)
         s = math.sin(theta)
         R = torch.eye(3, dtype=torch.float)
@@ -53,11 +53,11 @@ class GraspDataset(Dataset):
                                   [s, c]])
         t = torch.from_numpy(np.random.uniform(-5, 5, size=3)).to(torch.float)
         t[2] = 0
-        # t = torch.zeros(3)
-        query_rand = np.random.uniform(-10, 10, size=(200, 3))
+        t = torch.zeros(3)
+        query_rand = np.random.uniform(-1, 1, size=(100, 3))
         query = torch.from_numpy(query_rand).to(torch.float)
         query[:, 2] = 0
-        query2 = torch.from_numpy(query_rand + np.random.normal(0, 1, size=(200, 3))).to(torch.float)
+        query2 = torch.from_numpy(query_rand + np.random.normal(0, 1, size=(100, 3))).to(torch.float)
         query2[:, 2] = 0
 
         SDF = partial(sdf.sdf, shape=self.shape)
