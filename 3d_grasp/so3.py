@@ -1,6 +1,11 @@
 import torch
 import math
 
+if torch.cuda.is_available():
+    dev = "cuda:0"
+else:
+    dev = "cpu"
+device = torch.device(dev)
 
 def rand():
     def generate_random_z_axis_rotation():
@@ -27,7 +32,7 @@ def rand():
     return M
 
 
-def exp_map(phi):
+def exp_map(phi, device=torch.device("cpu")):
     angle = torch.norm(phi, dim=1, keepdim=True)
 
     def ordinary(phi, angle):
@@ -47,15 +52,15 @@ def exp_map(phi):
 
     def first_order_taylor(phi):
         w1, w2, w3 = phi.T
-        ones = torch.ones(w1.shape)
+        ones = torch.ones(w1.shape).to(device)
         R = torch.stack([ones, -w3, w2,
                          w3, ones, -w1,
                          -w2, w1, ones]).T
         return R
 
-    indexing = torch.isclose(angle, torch.zeros(angle.shape))
+    indexing = torch.isclose(angle, torch.zeros(angle.shape).to(device))
 
-    R = torch.empty((phi.shape[0], 9))
+    R = torch.empty((phi.shape[0], 9)).to(device)
     R[indexing[:, 0], :] = first_order_taylor(phi[indexing[:, 0], :])
     R[torch.logical_not(indexing)[:, 0], :] = ordinary(phi[torch.logical_not(indexing)[:, 0], :],
                                                        angle[torch.logical_not(indexing)[:, 0], :])
@@ -79,9 +84,9 @@ def log_map(R):
         phi = torch.stack([R[:, 7], R[:, 2], R[:, 3]]).T
         return phi
 
-    indexing = torch.isclose(angle, torch.zeros(angle.shape).to(torch.device("cuda:0")))
+    indexing = torch.isclose(angle, torch.zeros(angle.shape).to(device))
 
-    phi = torch.empty((R.shape[0], 3)).to(torch.device("cuda:0"))
+    phi = torch.empty((R.shape[0], 3)).to(device)
     phi[indexing[:, 0], :] = first_order_taylor(R[indexing[:, 0], :])
     phi[torch.logical_not(indexing)[:, 0], :] = ordinary(R[torch.logical_not(indexing)[:, 0], :],
                                                          angle[torch.logical_not(indexing)[:, 0], :])

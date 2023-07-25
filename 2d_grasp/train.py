@@ -40,11 +40,11 @@ for epoch_index in range(epochs):
         # loss += (grasp_success * (torch.norm(torch.eye(3)[None, :, :].repeat(8, 1, 1) - Rc @ R.transpose(1, -1)) + torch.norm(tc[:, :, 0] - t))).mean()
         # loss += torch.norm(torch.eye(3)[None, :, :].repeat(8, 1, 1) - Rc @ Rc.transpose(1, -1)).mean()
 
-        # B = 8
-        # std = 0.1 * torch.ones(B)
-        # x_samples, R_samples = sample_from_se3_gaussian(ts[-1], Rs[-1], std)
-        # grasp_Rs, grasp_ts = model.inverse(R_samples, x_samples, object_info)
-        # loss += (grasp_success * (torch.norm(torch.eye(3)[None, :, :].repeat(8, 1, 1) - grasp_Rs[-1] @ grasp_R.transpose(1, -1)) + torch.norm(grasp_ts[-1] - grasp_t))).mean()
+        B = 8
+        std = 0.1 * torch.ones(B)
+        x_samples, R_samples = sample_from_se3_gaussian(ts[-1], Rs[-1], std)
+        grasp_Rs, grasp_ts = model.inverse(R_samples, x_samples, object_info)
+        loss += (grasp_success * (torch.norm(torch.eye(3)[None, :, :].repeat(8, 1, 1) - grasp_Rs[-1] @ grasp_R.transpose(1, -1)) + torch.norm(grasp_ts[-1] - grasp_t))).mean()
 
         if torch.isnan(loss).any():
             flag = 1

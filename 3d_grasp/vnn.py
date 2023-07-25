@@ -64,25 +64,24 @@ class VNNPointNet(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(VNNPointNet, self).__init__()
 
-        self.layer_a = nn.Linear(in_channels * 3, out_channels * 3)
-        self.layer_b = nn.Linear(out_channels * 3, out_channels * 3)
-        self.layer_c = nn.Linear(out_channels * 3, out_channels * 3)
+        self.net = nn.Sequential(
+            nn.Conv1d(in_channels, out_channels, 1),
+            nn.ReLU(),
+            nn.Conv1d(out_channels, out_channels, 1),
+            nn.ReLU(),
+            nn.Conv1d(out_channels, out_channels, 1),
+        )
         self.out_channels = out_channels
 
     def forward(self, x):
         '''
-        x: point features of shape [B, N_samples, 3, N_feat, ...]
+        x: point features of shape [B, N_samples, 3]
         '''
-        B, N_samples, _, N_feat = x.size()
-        x = x.reshape(B, N_samples, 3 * N_feat)
-        x = F.relu((self.layer_a(x)))
-        x = F.relu((self.layer_b(x)))
-        x = F.relu((self.layer_c(x)))
-        x = torch.max(x, 1, keepdim=False)[0]
-        x = x.reshape(B, 3, self.out_channels)
-
+        B, N_samples, _ = x.size()
+        x = x.transpose(1, -1)
+        x = self.net(x)
+        x = torch.max(x, 2, keepdim=False)[0]
         return x
-
 
 if __name__ == "__main__":
     import random
@@ -96,7 +95,7 @@ if __name__ == "__main__":
                       [s, c, 0],
                       [0, 0, 1]])
 
-    test = 2
+    test = 3
 
     if test == 1:
         xo = torch.rand((1, 2, 3, 2))
@@ -126,3 +125,10 @@ if __name__ == "__main__":
 
         # print(co)
         # print(ct)
+    elif test == 3:
+        xo = torch.rand((2, 2, 3))
+        xo[0, :, :] = 1
+        layer = VNNPointNet(3, 4)
+        C = layer.forward(xo)
+
+
