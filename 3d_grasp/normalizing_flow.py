@@ -2,7 +2,9 @@ import torch
 from torch import nn
 import math
 import so3
-from vnn import VNNSVD, VNNPointNet
+from vnn import VNNSVD
+from pointnet2_cls_ssg import pointnet2_encoder
+from pointnet_utils import PointNetEncoder
 
 
 class LinearModel(nn.Module):
@@ -40,9 +42,7 @@ class EuclideanFlow(nn.Module):
         self.xyz_index = xyz_index
         self.inverse_xyz_index = torch.ones(3).bool()
         self.inverse_xyz_index[self.xyz_index] = False
-        self.hidden = 1024 * 2
-
-        self.net = LinearModel(n_shape + 9 * 1, 3 * 2, self.hidden)
+        self.net = LinearModel(n_shape + 9 * 1, 3 * 2, 512)
 
     def forward(self, R, t, C, inverse=False, device=torch.device("cpu")):
         # t_fixed = t[:, self.xyz_index][:, None]
@@ -69,9 +69,7 @@ class MobiusFlow(nn.Module):
     def __init__(self, n_shape, xyz_index):
         super(MobiusFlow, self).__init__()
         self.xyz_index = xyz_index
-        self.hidden = 1024 * 2
-
-        self.net = LinearModel(n_shape + 3 * 1 + 3, 3 + 1, self.hidden)
+        self.net = LinearModel(n_shape + 3 * 1 + 3, 3 + 1, 512)
 
     def forward(self, R, t, C, inverse=False, device=torch.device("cpu")):
         c1 = R[:, :, self.xyz_index].to(device)
@@ -124,7 +122,7 @@ import mobiusflow
 class wrapper(nn.Module):
     def __init__(self, n_shape, xyz_index):
         super(wrapper, self).__init__()
-        self.net = mobiusflow.MobiusFlow(3, 10, condition=1, feature_dim=n_shape + 3)
+        self.net = mobiusflow.MobiusFlow(3, 1, condition=1, feature_dim=n_shape + 3)
         self.permute = [xyz_index, (xyz_index + 1) % 3, (xyz_index + 2) % 3]
 
     def forward(self, R, t, C, inverse=False, device=torch.device("cpu")):
@@ -144,12 +142,13 @@ class NormalizingFlow(nn.Module):
     def __init__(self, n_shape):
         super(NormalizingFlow, self).__init__()
         # self.transformation = VNNSVD(2, n_shape)
-        self.transformation = VNNPointNet(3, n_shape)
+        self.transformation = pointnet2_encoder()
+        # self.transformation = PointNetEncoder()
         self.net = nn.ModuleList(
             [EuclideanFlow(n_shape, 0),
-             MobiusFlow(n_shape, 0),
-             MobiusFlow(n_shape, 1),
-             ] * 12
+             wrapper(n_shape, 0),
+             wrapper(n_shape, 1),
+             ] * 4
         )
 
     def se3_log_probability_normal(self, t, R):
@@ -159,6 +158,7 @@ class NormalizingFlow(nn.Module):
         return -.5 * dist.pow(2).sum(-1) / (1 ** 2)
 
     def forward(self, R, t, C, inverse=False, device=torch.device("cpu")):
+        C = C.transpose(1, -1)
         C = self.transformation.forward(C)
 
         if not inverse:
@@ -167,7 +167,7 @@ class NormalizingFlow(nn.Module):
                 R, t, log_j = layer.forward(R, t, C, inverse, device)
                 log_jacobs += log_j
             log_pz = self.se3_log_probability_normal(t.to(device), R.to(device))
-            return R, t, log_jacobs, log_pz, C
+            return R, t, log_jacobs, log_pz
         else:
             for layer in self.net[::-1]:
                 R, t = layer.inverse(R, t, C, device)
@@ -195,9 +195,9 @@ if __name__ == "__main__":
     # print(t_new, log_det)
     # print(t_orig)
 
-    mnf = MobiusFlow(5, 2)
+    mnf = MobiusFlow(5, 1)
     R_new, _, log_det = mnf.forward(R, t, C)
     R_orig, _ = mnf.forward(R_new, t, C, inverse=True)
-    # print(R)
-    # print(R_new, log_det)
-    # print(R_orig)
+    print(R)
+    print(R_new, log_det)
+    print(R_orig)

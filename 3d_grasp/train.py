@@ -39,7 +39,7 @@ for epoch_index in range(epochs):
         object_info = object_info.to(device)
         grasp_T = grasp_T.to(device)
         optimizer.zero_grad()
-        R, t, log_jacobs, log_pz, C = model.forward(grasp_T[:, :3, :3], grasp_T[:, :3, 3], object_info, device=device)
+        R, t, log_jacobs, log_pz = model.forward(grasp_T[:, :3, :3], grasp_T[:, :3, 3], object_info, device=device)
         loss = -(log_pz + log_jacobs).mean()
 
         if torch.isnan(loss).any():

@@ -8,7 +8,7 @@ class ConditionalTransform(nn.Module):
     A 4 layer NN with ReLU as activation function
     '''
 
-    def __init__(self, Ni, No, Nh=1024*2):
+    def __init__(self, Ni, No, Nh=1024):
         super(ConditionalTransform, self).__init__()
 
         layers = []
