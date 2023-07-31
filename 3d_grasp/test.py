@@ -5,7 +5,7 @@ from dataloader import GraspDataset
 from grasp_visualization import visualize_grasps
 
 model = NormalizingFlow(1024)
-PATH = './weights/epoch1.pth'
+PATH = './weights/epoch171.pth'
 checkpoint = torch.load(PATH)
 model.load_state_dict(checkpoint['model_state_dict'])
 torch.manual_seed(0)
@@ -39,7 +39,7 @@ std = 1 * torch.ones(B)
 x_samples, R_samples = sample_from_se3_gaussian(x_mu, R_mu, std)
 # x_samples, R_samples = sample_from_se3_uniform(B)
 
-dataset = GraspDataset(256)
+dataset = GraspDataset(1024)
 training_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False)
 
 for i, data in enumerate(training_loader):
@@ -64,5 +64,5 @@ for i, data in enumerate(training_loader):
     colors[:, 0] = 1
     scene = visualize_grasps(Hs=H.detach().numpy(), colors=colors, p_cloud=xyz, show=True, scale=1)
     # scene = visualize_grasps(Hs=H_real.detach().numpy(), colors=colors, p_cloud=xyz, show=True, scale=1.0)
-    if i == 4:
+    if i == 1:
         break

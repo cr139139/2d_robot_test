@@ -3,7 +3,7 @@ from dataloader import GraspDataset
 from normalizing_flow import NormalizingFlow
 
 dataset = GraspDataset(256)
-training_loader = torch.utils.data.DataLoader(dataset, batch_size=128, shuffle=True)
+training_loader = torch.utils.data.DataLoader(dataset, batch_size=128, shuffle=False)
 model = NormalizingFlow(1024)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
@@ -57,3 +57,4 @@ for epoch_index in range(epochs):
             'optimizer_state_dict': optimizer.state_dict(),
             'loss': loss.item(),
         }, './weights/epoch{}.pth'.format(epoch_index + 1))
+

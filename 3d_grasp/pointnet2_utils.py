@@ -152,11 +152,11 @@ class PointNetSetAbstraction(nn.Module):
         self.radius = radius
         self.nsample = nsample
         self.mlp_convs = nn.ModuleList()
-        self.mlp_bns = nn.ModuleList()
+        # self.mlp_bns = nn.ModuleList()
         last_channel = in_channel
         for out_channel in mlp:
             self.mlp_convs.append(nn.Conv2d(last_channel, out_channel, 1))
-            self.mlp_bns.append(nn.BatchNorm2d(out_channel))
+            # self.mlp_bns.append(nn.BatchNorm2d(out_channel))
             last_channel = out_channel
         self.group_all = group_all
 
@@ -181,8 +181,9 @@ class PointNetSetAbstraction(nn.Module):
         # new_points: sampled points data, [B, npoint, nsample, C+D]
         new_points = new_points.permute(0, 3, 2, 1)  # [B, C+D, nsample,npoint]
         for i, conv in enumerate(self.mlp_convs):
-            bn = self.mlp_bns[i]
-            new_points = F.relu(bn(conv(new_points)))
+            # bn = self.mlp_bns[i]
+            # new_points = F.relu(bn(conv(new_points)))
+            new_points = F.relu(conv(new_points))
 
         new_points = torch.max(new_points, 2)[0]
         new_xyz = new_xyz.permute(0, 2, 1)

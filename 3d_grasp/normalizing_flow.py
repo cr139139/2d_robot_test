@@ -146,8 +146,8 @@ class NormalizingFlow(nn.Module):
         # self.transformation = PointNetEncoder()
         self.net = nn.ModuleList(
             [EuclideanFlow(n_shape, 0),
-             wrapper(n_shape, 0),
-             wrapper(n_shape, 1),
+             MobiusFlow(n_shape, 0),
+             MobiusFlow(n_shape, 1),
              ] * 4
         )
 
