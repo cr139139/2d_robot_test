@@ -41,8 +41,8 @@ for epoch_index in range(epochs):
         loss = torch.sum(
             (grasp_T.inverse() @ grasp_T_pred - torch.eye(4).reshape((1, 4, 4)).repeat(B, 1, 1).to(device)) ** 2,
             dim=[1, 2]).mean()
-        loss + torch.sum(
-            ((grasp_T.inverse() @ grasp_T_pred).inverse() - torch.eye(4).reshape((1, 4, 4)).repeat(B, 1, 1).to(device)) ** 2,
+        loss += torch.sum(
+            (grasp_T_pred.inverse() @ grasp_T - torch.eye(4).reshape((1, 4, 4)).repeat(B, 1, 1).to(device)) ** 2,
             dim=[1, 2]).mean()
 
         if torch.isnan(loss).any():

@@ -28,12 +28,20 @@ class GraspDataset(Dataset):
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
-        idx = 0
+
+        # idx = 8
+
         data = np.load(self.files[idx][0])
         pcd = o3d.io.read_point_cloud(self.files[idx][1])
+
+        normals = np.asarray(pcd.normals)
         pcd = np.asarray(pcd.points)
         pcd_idx = np.random.randint(8000, size=self.n_points)
-        pcd = torch.from_numpy(pcd[pcd_idx, :]).to(torch.float)
+        normals = normals[pcd_idx, :]
+        pcd = pcd[pcd_idx, :]
+        pcd_mean = np.mean(pcd, axis=0)
+        pcd -= pcd_mean
+        point_idx = np.random.randint(self.n_points, size=1)
 
         # tree = KDTree(pcd)
         # nearest_dist, nearest_ind = tree.query(pcd[pcd_idx, :], k=2)
@@ -42,9 +50,16 @@ class GraspDataset(Dataset):
         # pcd = torch.concatenate([pcd1, pcd2], dim=-1)
 
         grasps = data['grasp_transform'][data['successful'].astype(bool), :, :]
+        grasps_dists = np.linalg.norm(grasps[:, :3, 3] - pcd[point_idx, :], axis=1)
+        min_arg = np.argmin(grasps_dists)
+
         grasp = torch.from_numpy(grasps[np.random.randint(0, grasps.shape[0]), :, :]).to(torch.float)
+        normals = torch.from_numpy(normals).to(torch.float)
+        pcd = torch.from_numpy(pcd).to(torch.float)
+        # grasp = torch.from_numpy(grasps[min_arg, :, :]).to(torch.float)
+        grasp[:3, 3] -= torch.from_numpy(pcd_mean).to(torch.float)
 
         # pcd *= 100
         # grasp[:3, 3] *= 100
 
-        return pcd, grasp
+        return torch.cat([pcd, normals], dim=1), grasp, point_idx

@@ -1,10 +1,5 @@
 import torch
-r = list(range(6))
-permutations = [r[i:] + r[:i] for i in range(6)]
-print(permutations)
+import relie
+vee = torch.tensor([[0, 0, 0]], dtype=torch.double)
 
-permutation = torch.tensor(permutations[1], dtype=torch.long)
-inv_permutation = torch.sort(permutation)[1]
-print(inv_permutation)
-
-print(list(reversed(range(5))))
+print(relie.utils.so3_tools.so3_exp(vee))

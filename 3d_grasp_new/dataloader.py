@@ -28,15 +28,20 @@ class GraspDataset(Dataset):
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
-        idx = 0
         data = np.load(self.files[idx][0])
         pcd = o3d.io.read_point_cloud(self.files[idx][1])
+
+        normals = np.asarray(pcd.normals)
         pcd = np.asarray(pcd.points)
         pcd_idx = np.random.randint(8000, size=self.n_points)
-        pcd = torch.from_numpy(pcd[pcd_idx, :]).to(torch.float)
+        normals = normals[pcd_idx, :]
+        pcd = pcd[pcd_idx, :]
+
+        normals = torch.from_numpy(normals).to(torch.float)
+        pcd = torch.from_numpy(pcd).to(torch.float)
 
         grasps = data['grasp_transform'][data['successful'].astype(bool), :, :]
-        grasp = torch.from_numpy(grasps[np.random.randint(0, grasps.shape[0]), :, :]).to(torch.float)
-        grasp_vee = relie.utils.se3_tools.se3_vee(relie.utils.se3_tools.se3_log(grasp))
+        grasp = torch.from_numpy(grasps[np.random.randint(0, grasps.shape[0]), :, :]).to(torch.double)
+        grasp_vee = relie.utils.se3_tools.se3_vee(relie.utils.se3_tools.se3_log(grasp)).to(torch.float)
 
-        return pcd, grasp_vee
+        return torch.cat([pcd, normals], dim=1), grasp_vee

@@ -21,13 +21,12 @@ def Jacobian(joint_positions):
     return np.stack([J_x, J_y, J_theta], axis=0)
 
 
-
-
 fig, ax = plt.subplots(1, 1)
 current_joint = np.zeros(n_dof)
 target_pose = np.array([-2, 2, np.pi / 2])
 ax.scatter(target_pose[0], target_pose[1], c='r')
-ax.quiver(target_pose[0], target_pose[1], np.cos(target_pose[2]), np.sin(target_pose[2]), angles='uv', scale=2, scale_units='xy', color='r')
+ax.quiver(target_pose[0], target_pose[1], np.cos(target_pose[2]), np.sin(target_pose[2]), angles='uv', scale=2,
+          scale_units='xy', color='r')
 xs, ys, thetas = fk(current_joint)
 
 joint_origin = np.zeros(2)
