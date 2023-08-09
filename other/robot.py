@@ -93,7 +93,7 @@ def update(frame):
     return joint_draw + hand_draw
 
 
-ani = animation.FuncAnimation(fig=fig, func=update, frames=1000, interval=30)
+ani = animation.FuncAnimation(fig=fig, func=update, frames=1000, interval=1)
 # f = r"animation.gif"
 # writergif = animation.PillowWriter(fps=30)
 # ani.save(f, writer=writergif)
