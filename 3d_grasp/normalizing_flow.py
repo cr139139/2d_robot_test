@@ -2,9 +2,39 @@ import torch
 from torch import nn
 import math
 import so3
+import torch.nn.functional as F
 from vnn import VNNSVD
 from pointnet2_cls_ssg import pointnet2_encoder
-from pointnet_utils import PointNetEncoder
+
+
+# from pointnet_utils import PointNetEncoder
+
+
+class PointNetEncoder(nn.Module):
+    def __init__(self, channel=6):
+        super(PointNetEncoder, self).__init__()
+        self.first_conv = nn.Sequential(
+            nn.Conv1d(channel, 128, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(128, 256, 1)
+        )
+        self.second_conv = nn.Sequential(
+            nn.Conv1d(512, 512, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(512, 1024, 1)
+        )
+
+    def forward(self, x, idx=None):
+        B, N, _ = x.shape
+        feature = self.first_conv(x.transpose(2, 1))  # (B, 256, N)
+        feature_global = torch.max(feature, dim=2, keepdim=True)[0]  # (B, 256, 1)
+        feature = torch.cat([feature_global.expand(-1, -1, N), feature], dim=1)  # (B, 512, N)
+        feature = self.second_conv(feature)  # (B, 1024, N)
+        if idx is None:
+            feature_global = torch.max(feature, dim=2, keepdim=False)[0]  # (B, 1024)
+        else:
+            feature_global = feature[torch.arange(B), :, idx[:, 0]]
+        return feature_global
 
 
 class LinearModel(nn.Module):
@@ -12,28 +42,22 @@ class LinearModel(nn.Module):
     A 4 layer NN with ReLU as activation function
     '''
 
-    def __init__(self, Ni, No, Nh=64):
+    def __init__(self, Ni, No, Nh=256):
         super(LinearModel, self).__init__()
 
-        layers = []
-        self.fc_first = nn.Linear(Ni, Nh)
-        layers.append(nn.ReLU())
-        layers.append(nn.Linear(Nh, Nh))
-        layers.append(nn.ReLU())
-        layers.append(nn.Linear(Nh, Nh))
-        layers.append(nn.ReLU())
-        layers.append(nn.Linear(Nh, Nh))
-        self.relu_last = nn.ReLU()
-        self.fc_last = nn.Linear(Nh, No)
-        self.layers = nn.ModuleList(layers)
+        self.lin1 = nn.Linear(Ni, Nh)
+        self.lin2 = nn.Linear(Nh, Nh)
+        self.lin3 = nn.Linear(Nh, Nh)
+        self.lin4 = nn.Linear(Nh, Nh)
+        self.lin5 = nn.Linear(Nh, No)
 
     def forward(self, x):
-        x = self.fc_first(x)
-        x0 = x.clone()
-        for layer in self.layers:
-            x = layer(x)
-        x = self.relu_last(x0 + x)
-        return self.fc_last(x)
+        x = F.relu(self.lin1(x))
+        x = x + F.relu(self.lin2(x))
+        x = x + F.relu(self.lin3(x))
+        x = x + F.relu(self.lin4(x))
+        x = self.lin5(x)
+        return x
 
 
 class EuclideanFlow(nn.Module):
@@ -42,23 +66,23 @@ class EuclideanFlow(nn.Module):
         self.xyz_index = xyz_index
         self.inverse_xyz_index = torch.ones(3).bool()
         self.inverse_xyz_index[self.xyz_index] = False
-        self.net = LinearModel(n_shape + 9 * 1, 3 * 2, 512)
+        self.net = LinearModel(n_shape + 9 + 1, 2 * 2)
 
     def forward(self, R, t, C, inverse=False, device=torch.device("cpu")):
-        # t_fixed = t[:, self.xyz_index][:, None]
-        input = torch.concatenate([C, R.reshape((-1, 9)).to(device)], dim=1)
+        t_fixed = t[:, self.xyz_index][:, None]
+        input = torch.concatenate([C, R.reshape((-1, 9)).to(device), t_fixed], dim=1)
         output = self.net.forward(input)
-        sig, mu = output[:, :3], output[:, 3:]
-        # t_new = torch.zeros(t.shape).to(device)
-        # t_new[:, self.xyz_index] = t[:, self.xyz_index]
+        sig, mu = F.tanh(output[:, :2]), output[:, 2:]
+        t_new = torch.zeros(t.shape).to(device)
+        t_new[:, self.xyz_index] = t[:, self.xyz_index]
         if not inverse:
-            # t_new[:, self.inverse_xyz_index] = t[:, self.inverse_xyz_index] * torch.exp(sig) + mu
-            t_new = t * torch.exp(sig) + mu
+            t_new[:, self.inverse_xyz_index] = t[:, self.inverse_xyz_index] * torch.exp(sig) + mu
+            # t_new = t * torch.exp(sig) + mu
             log_det = sig.sum(-1)
             return R, t_new, log_det
         else:
-            # t_new[:, self.inverse_xyz_index] = (t[:, self.inverse_xyz_index] - mu) * torch.exp(-sig)
-            t_new = (t - mu) * torch.exp(-sig)
+            t_new[:, self.inverse_xyz_index] = (t[:, self.inverse_xyz_index] - mu) * torch.exp(-sig)
+            # t_new = (t - mu) * torch.exp(-sig)
             return R, t_new
 
     def inverse(self, R, t, C, device=torch.device("cpu")):
@@ -69,7 +93,7 @@ class MobiusFlow(nn.Module):
     def __init__(self, n_shape, xyz_index):
         super(MobiusFlow, self).__init__()
         self.xyz_index = xyz_index
-        self.net = LinearModel(n_shape + 3 * 1 + 3, 3 + 1, 512)
+        self.net = LinearModel(n_shape + 3 * 1 + 3, 3 + 1)
 
     def forward(self, R, t, C, inverse=False, device=torch.device("cpu")):
         c1 = R[:, :, self.xyz_index].to(device)
@@ -78,7 +102,7 @@ class MobiusFlow(nn.Module):
         output = self.net.forward(input)
         weight, w_ = nn.functional.sigmoid(output[:, :1]), output[:, 1:]
         w = w_ - c1 * (c1 * w_).sum(1, keepdim=True)
-        w = 1 / (1e-8 + torch.norm(w, dim=-1, keepdim=True)) * w * weight
+        w = 0.7 / (1e-8 + torch.norm(w, dim=-1, keepdim=True)) * w * weight
 
         if not inverse:
             c2_w = c2 - w
@@ -94,9 +118,9 @@ class MobiusFlow(nn.Module):
             c3_new = torch.cross(c1, c2_new)
 
         B = R.shape[0]
-        c2_new = c2_new / c2_new.norm(dim=-1, keepdim=True)
-        c3_new = c3_new / c3_new.norm(dim=-1, keepdim=True)
-        R_new = torch.zeros(R.shape)
+        # c2_new = c2_new / (1e-8 + c2_new.norm(dim=-1, keepdim=True))
+        # c3_new = c3_new / (1e-8 + c3_new.norm(dim=-1, keepdim=True))
+        R_new = torch.zeros(R.shape).to(device)
         R_new[:, :, self.xyz_index] = c1
         R_new[:, :, (self.xyz_index + 1) % 3] = c2_new
         R_new[:, :, (self.xyz_index + 2) % 3] = c3_new
@@ -138,36 +162,69 @@ class wrapper(nn.Module):
         return self.forward(R, t, C, inverse=True, device=device)
 
 
-class NormalizingFlow(nn.Module):
+# class NormalizingFlow(nn.Module):
+#     def __init__(self, n_shape):
+#         super(NormalizingFlow, self).__init__()
+#         # self.transformation = VNNSVD(2, n_shape)
+#         # self.transformation = pointnet2_encoder()
+#         self.transformation = PointNetEncoder()
+#         self.net = nn.ModuleList(
+#             [EuclideanFlow(n_shape, 0),
+#              wrapper(n_shape, 0),
+#              wrapper(n_shape, 1),
+#              ] * 8
+#         )
+#
+#     def se3_log_probability_normal(self, t, R):
+#         dtheta = so3.log_map(R)
+#         dx = t
+#         dist = torch.cat((dx, dtheta), dim=-1)
+#         return -.5 * dist.pow(2).sum(-1) / (1 ** 2)
+#
+#     def forward(self, R, t, C, inverse=False, device=torch.device("cpu")):
+#         C = C.transpose(1, -1)
+#         C = self.transformation.forward(C)
+#
+#         if not inverse:
+#             log_jacobs = 0
+#             for layer in self.net:
+#                 R, t, log_j = layer.forward(R, t, C, inverse, device)
+#                 log_jacobs += log_j
+#             log_pz = self.se3_log_probability_normal(t.to(device), R.to(device))
+#             return R, t, log_jacobs, log_pz
+#         else:
+#             for layer in self.net[::-1]:
+#                 R, t = layer.inverse(R, t, C, device)
+#             return R, t
+
+
+class NormalizingFlow2(nn.Module):
     def __init__(self, n_shape):
-        super(NormalizingFlow, self).__init__()
-        # self.transformation = VNNSVD(2, n_shape)
-        self.transformation = pointnet2_encoder()
+        super(NormalizingFlow2, self).__init__()
+        self.transformation = pointnet2_encoder(normal_channel=True)
         # self.transformation = PointNetEncoder()
         self.net = nn.ModuleList(
-            [EuclideanFlow(n_shape, 0),
-             MobiusFlow(n_shape, 0),
-             MobiusFlow(n_shape, 1),
-             ] * 4
+            [
+                MobiusFlow(n_shape, 0),
+                MobiusFlow(n_shape, 1),
+                MobiusFlow(n_shape, 2),
+                EuclideanFlow(n_shape, 0),
+                EuclideanFlow(n_shape, 1),
+                EuclideanFlow(n_shape, 2),
+                MobiusFlow(n_shape, 0),
+                MobiusFlow(n_shape, 1),
+                MobiusFlow(n_shape, 2),
+            ] * 1
         )
 
-    def se3_log_probability_normal(self, t, R):
-        dtheta = so3.log_map(R)
-        dx = t
-        dist = torch.cat((dx, dtheta), dim=-1)
-        return -.5 * dist.pow(2).sum(-1) / (1 ** 2)
-
-    def forward(self, R, t, C, inverse=False, device=torch.device("cpu")):
-        C = C.transpose(1, -1)
+    def forward(self, R, t, C, idx=None, inverse=False, device=torch.device("cpu")):
         C = self.transformation.forward(C)
-
         if not inverse:
             log_jacobs = 0
             for layer in self.net:
                 R, t, log_j = layer.forward(R, t, C, inverse, device)
                 log_jacobs += log_j
-            log_pz = self.se3_log_probability_normal(t.to(device), R.to(device))
-            return R, t, log_jacobs, log_pz
+            return R, t, log_jacobs
         else:
             for layer in self.net[::-1]:
                 R, t = layer.inverse(R, t, C, device)

@@ -27,7 +27,7 @@ class GraspDataset(Dataset):
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
-        idx = 8
+        idx = 0
         pcd = o3d.io.read_point_cloud(self.files[idx][1])
         pcd = np.asarray(pcd.points)
         pcd_idx = np.random.randint(8000, size=self.n_points)

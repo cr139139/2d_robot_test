@@ -5,7 +5,7 @@ from dataloader import GraspDataset
 from grasp_visualization import visualize_grasps
 
 model = GraspSampler2()
-PATH = './weights/epoch41.pth'
+PATH = './weights/epoch31.pth'
 checkpoint = torch.load(PATH)
 model.load_state_dict(checkpoint['model_state_dict'])
 # torch.manual_seed(0)

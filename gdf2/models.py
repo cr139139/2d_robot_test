@@ -31,10 +31,10 @@ class EuclideanFlow(nn.Module):
         self.xyz_index = xyz_index
         self.inverse_xyz_index = torch.ones(3).bool()
         self.inverse_xyz_index[self.xyz_index] = False
-        self.net = LinearModel(n_shape + 12, 3 * 2, 256)
+        self.net = LinearModel(n_shape + 9, 3 * 2, 256)
 
     def forward(self, R, t, C, device=torch.device("cpu")):
-        input = torch.concatenate([C, R.reshape((-1, 9)).to(device), t], dim=1)
+        input = torch.concatenate([C, R.reshape((-1, 9)).to(device)], dim=1)
         output = self.net.forward(input)
         sig, mu = output[:, :3], output[:, 3:]
         t_new = t * torch.exp(sig) + mu
@@ -45,16 +45,16 @@ class MobiusFlow(nn.Module):
     def __init__(self, n_shape, xyz_index):
         super(MobiusFlow, self).__init__()
         self.xyz_index = xyz_index
-        self.net = LinearModel(n_shape + 12, 3 + 1, 256)
+        self.net = LinearModel(n_shape + 3, 3 + 1, 256)
 
     def forward(self, R, t, C, device=torch.device("cpu")):
         c1 = R[:, :, self.xyz_index].to(device)
         c2 = R[:, :, (self.xyz_index + 1) % 3].to(device)
-        input = torch.concatenate([C, R.reshape((-1, 9)).to(device), t], dim=1)
+        input = torch.concatenate([C, t], dim=1)
         output = self.net.forward(input)
         weight, w_ = nn.functional.sigmoid(output[:, :1]), output[:, 1:]
         w = w_ - c1 * (c1 * w_).sum(1, keepdim=True)
-        w = 1 / (1e-8 + torch.norm(w, dim=-1, keepdim=True)) * w * weight
+        w = 0.7 / (1e-8 + torch.norm(w, dim=-1, keepdim=True)) * w * weight
 
         c2_w = c2 - w
         c2_w_l = torch.norm(c2_w, dim=1, keepdim=True)
@@ -62,8 +62,6 @@ class MobiusFlow(nn.Module):
         c2_new = constant * c2_w - w
         c3_new = torch.cross(c1, c2_new)
 
-        c2_new = c2_new / c2_new.norm(dim=-1, keepdim=True)
-        c3_new = c3_new / c3_new.norm(dim=-1, keepdim=True)
         R_new = torch.zeros(R.shape)
         R_new[:, :, self.xyz_index] = c1
         R_new[:, :, (self.xyz_index + 1) % 3] = c2_new
@@ -101,10 +99,12 @@ class GraspSampler2(nn.Module):
         super(GraspSampler2, self).__init__()
         self.point_encoder = PointNetEncoder()
         self.net = nn.ModuleList(
-            [EuclideanFlow(1024, 0),
-             MobiusFlow(1024, 0),
-             MobiusFlow(1024, 1),
-             ] * 4
+            [
+                MobiusFlow(1024, 0),
+                MobiusFlow(1024, 1),
+                MobiusFlow(1024, 2),
+                EuclideanFlow(1024, 0),
+            ] * 4
         )
 
     def forward(self, P, T, device):

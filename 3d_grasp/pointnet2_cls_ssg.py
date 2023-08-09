@@ -7,14 +7,15 @@ class pointnet2_encoder(nn.Module):
         super(pointnet2_encoder, self).__init__()
         in_channel = 6 if normal_channel else 3
         self.normal_channel = normal_channel
-        self.sa1 = PointNetSetAbstraction(npoint=128, radius=0.2, nsample=32, in_channel=in_channel, mlp=[64, 64, 128],
+        self.sa1 = PointNetSetAbstraction(npoint=64, radius=0.2, nsample=32, in_channel=in_channel, mlp=[64, 64, 128],
                                           group_all=False)
-        self.sa2 = PointNetSetAbstraction(npoint=64, radius=0.4, nsample=64, in_channel=128 + 3, mlp=[128, 128, 256],
+        self.sa2 = PointNetSetAbstraction(npoint=32, radius=0.4, nsample=64, in_channel=128 + 3, mlp=[128, 128, 256],
                                           group_all=False)
         self.sa3 = PointNetSetAbstraction(npoint=None, radius=None, nsample=None, in_channel=256 + 3,
                                           mlp=[256, 512, 1024], group_all=True)
 
     def forward(self, xyz):
+        xyz = xyz.transpose(1, 2)
         B, _, _ = xyz.shape
         if self.normal_channel:
             norm = xyz[:, 3:, :]
